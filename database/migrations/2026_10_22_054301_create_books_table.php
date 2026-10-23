@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('title');
             $table->text('description')->nullable();
-            $table->interger('status')->unsigned()->nullable();
+            $table->integer('status')->unsigned()->nullable();
             $table->timestamps();
         });
     }
