@@ -2,69 +2,99 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Models\Book;
 use App\Http\Controllers\Controller;
+use App\Models\Book;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Intervention\Image\Drivers\Gd\Driver;
+use Intervention\Image\ImageManager;
 
 class BookController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index()
     {
-        return response()->json(Book::all(), 200);
+        return response()->json(Book::latest()->get(), 200);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
-        $validate = $request->validate([
-            'title' => 'required|string',
-            'description' => 'required|string',
-            'status' => 'required',
+        $data = $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'status' => 'required|integer',
+            'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:2048',
         ]);
-        $book = Book::create($validate);
+
+        $data['image'] = $this->processImage($request);
+        $book = Book::create($data);
+
         return response()->json($book, 201);
     }
 
-    /**
-     * Display the specified resource.
-     */
     public function show(string $id)
     {
         $book = Book::find($id);
         if (!$book) {
             return response()->json(['message' => 'Book not found'], 404);
         }
+
         return response()->json($book, 200);
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(Request $request, string $id)
     {
         $book = Book::find($id);
         if (!$book) {
             return response()->json(['message' => 'Book not found'], 404);
         }
-        $book->update($request->all());
-        return response()->json($book, 200);
+
+        $data = $request->validate([
+            'title' => 'sometimes|required|string|max:255',
+            'description' => 'sometimes|nullable|string',
+            'status' => 'sometimes|required|integer',
+            'image' => 'sometimes|nullable|image|mimes:jpeg,jpg,png,webp|max:2048',
+        ]);
+
+        if ($request->hasFile('image')) {
+            $oldImage = $book->image;
+            $data['image'] = $this->processImage($request);
+            if ($oldImage) {
+                Storage::disk('public')->delete($oldImage);
+            }
+        }
+
+        $book->update($data);
+        return response()->json($book->fresh(), 200);
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(string $id)
     {
         $book = Book::find($id);
         if (!$book) {
             return response()->json(['message' => 'Book not found'], 404);
         }
+
+        if ($book->image) {
+            Storage::disk('public')->delete($book->image);
+        }
         $book->delete();
+
         return response()->json(['message' => 'Book deleted'], 200);
+    }
+
+    private function processImage(Request $request): ?string
+    {
+        if (!$request->hasFile('image')) {
+            return null;
+        }
+
+        $filename = 'books/'.Str::uuid().'.jpg';
+        $image = (new ImageManager(new Driver()))
+            ->read($request->file('image')->getRealPath())
+            ->cover(800, 800);
+
+        Storage::disk('public')->put($filename, $image->toJpeg(85));
+        return $filename;
     }
 }
